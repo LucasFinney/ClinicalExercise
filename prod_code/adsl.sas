@@ -4,11 +4,15 @@
 To Do:
 - Group ages
 - Much more...
+
+Current Task: Finding Cumulative and average doses <- Need to find treatment intervals for high dosage group first
 */
+
 /*
 Questions for Jagadish:
 - Proper formatting. Is it acceptable to have a whole bunch of datasteps for each task?
 */
+
 /* Define Macros and Functions */
 /*
 Macro 1
@@ -28,6 +32,7 @@ Need to check SAS docs and clean this up.
 %mend import_xpt;
 
 %import_xpt(dm);
+%import_xpt(ds);
 %import_xpt(sv);
 %import_xpt(ex);
 %import_xpt(ds);
@@ -52,14 +57,14 @@ DATA startDates;
 	DROP VISITNUM SVSTDTC;
 run;
 
-/* SECTION START: Finding end date! */
+/* SECTION A START: Finding end date! */
 proc sort data=work.ex;
 	by usubjid visitnum;
 run;
 
 DATA lastDose;
 	/* Find last EX record	 */
-	/* Spec-> Date of final dose (from the CRF) is EX.EXENDTC on the subject's last EX record  */
+	/*Spec-> Date of final dose (from the CRF) is EX.EXENDTC on the subject's last EX record*/
 	set work.ex;
 	by usubjid;
 
@@ -89,7 +94,32 @@ DATA endDates;
 	FORMAT TRTEDT DATE9.;
 run;
 
-/* SECTION END */
+/* SECTION A END */
+/* SECTION B START: Find visit dates*/
+DATA startVisit;
+	/* Purpose: Use SV domain info to find dates of first visit. Need to convert to SAS date format */
+	set sv(keep=USUBJID SVSTDTC VISITNUM);
+	where VISITNUM=1;
+	VISIT1DT=input(SVSTDTC, anydtdte10.);
+	FORMAT VISIT1DT date9.;
+	KEEP USUBJID VISIT1DT;
+run;
+
+DATA endVisit;
+	/* Purpose: Use DS domain to find date of end visit
+	Specs -> if DS.VISITNUM=13 where DSTERM='PROTCOL COMPLETED' then VISNUMEN=12,
+	otherwise VISNUMEN=DS.VISITNUM where DSTERM='PROTCOL COMPLETED'
+	*/
+	set ds(keep=USUBJID VISITNUM DSTERM);
+	where DSTERM="PROTOCOL COMPLETED";
+
+	if VISITNUM=13 then
+		VISNUMEN=12;
+	else
+		VISNUMEN=VISITNUM;
+run;
+
+/*SECTION B END*/
 DATA ADSL;
 	/*
 	Purpose:
@@ -100,7 +130,7 @@ DATA ADSL;
 	*/
 	merge work.dm(keep=studyid usubjid subjid siteid ARM RFXSTDTC RFXENDTC dthfl 
 		age ageu sex race ethnic RFSTDTC RFENDTC RFPENDTC RFXSTDTC RFXENDTC RFPENDTC) 
-		startDates endDates;
+		startDates endDates startVisit endVisit keyVisits;
 	by USUBJID;
 
 	/*
@@ -121,9 +151,9 @@ DATA ADSL;
 	IF arm="Placebo" then
 		TRT01PN=0;
 	ELSE IF arm="Xanomeline Low Dose" then
-		TRT01PN=27;
-	ELSE
 		TRT01PN=54;
+	ELSE
+		TRT01PN=81;
 
 	/*
 	Group sites.
@@ -141,6 +171,62 @@ DATA ADSL;
 	TRTDURD=TRTEDT-TRTSDT+1;
 run;
 
+/*SECTION D START: Finding treatment periods (for high dose group)  */
+DATA visit4dates;
+	/* Purpose: Need to know date of visit 4 and visit 12 in order to determine dosages */
+	set sv;
+	where VISITNUM=4;
+	visit4date=INPUT(SVSTDTC, anydtdte10.);
+	FORMAT visit4date date9.;
+	KEEP USUBJID visit4date;
+run;
+
+DATA visit12dates;
+	/* Purpose: Need to know date of visit 4 and visit 12 in order to determine dosages */
+	set sv;
+	where VISITNUM=12;
+	visit12date=INPUT(SVSTDTC, anydtdte10.);
+	FORMAT visit12date date9.;
+	KEEP USUBJID visit12date;
+run;
+
+DATA keyVisits;
+	/* 	Purpose: Add a flag to each subject indicating which intervals they've completed -> Use to calculate interval durations */
+	merge visit4dates visit12dates endDates startDates;
+	by USUBJID;
+
+	/* Determine number of days in first dosing interval */
+	if visit4date ne "." then
+		Int1Fl="Y";
+
+	if visit12date ne "." then
+		Int2Fl="Y";
+run;
+
+DATA intervaldurs;
+	/* Purpose: Check flags and use to calculate treatment intervals */
+	/* NOTE: THIS SHOULD GET REFACTORED! Can probably do this in the same step as the keyVisits */
+	set keyVisits;
+
+	if Int1Fl="Y" then
+		Int1DurD=visit4date-TRTSDT+1;
+	else
+		Int1DurD=TRTEDT-TRTSDT+1;
+
+	if Int2Fl="Y" then
+		Int2DurD=visit12date-visit4date+1;
+	else
+		Int2DurD=TRTEDT-visit4date+1;
+
+	If allDoses="Y" then
+		Int3DurD=TrtEdt-visit12date+1;
+run;
+
+/* SECTION C END */
+/*
+Next Task: Find CUMDOSE. <- Need to find visit days first.
+Specs -> VISIT1DT=SV.SVSTDTC when SV.VISITNUM=1, converted to SAS date
+*/
 /*
 Determine Site Groups
 ---------------------

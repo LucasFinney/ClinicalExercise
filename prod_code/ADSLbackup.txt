@@ -1,0 +1,67 @@
+%macro import_xpt(dataset);
+	%LET path = /home/u61624959/sasuser.v94/Clinical Data/&dataset..xpt;
+	libname sdtm xport "&path";
+
+	proc copy inlib=sdtm out=work;
+	run;
+
+%mend import_xpt;
+
+***** Importing Data *****;
+%import_xpt(dm);
+%import_xpt(ds);
+%import_xpt(sv);
+%import_xpt(ex);
+%import_xpt(ds);
+%import_xpt(qs);
+***** Determining Site Groups****
+
+
+		* Step 1: Determine the number of patients in each treatment arm at each site;
+
+proc freq data=dm_filt noprint;
+	TABLE siteid*ARM / out=site_counts NOPERCENT;
+run;
+
+* Step 2: Determine which sites have fewer than 3 patients in at least one treatment arm;
+
+data pooled_sites;
+	set site_counts;
+	where count <3 and arm ne "Screen Failure";
+	by SITEID;
+run;
+
+* Step 3: Create a list of just the sites which should be mapped to SITEGR1 = 900;
+
+proc sort data=pooled_sites out=pooled_sites nodupkey;
+	by SITEID;
+run;
+
+* Step 4: Merge SITEGR1 into the main dataset. This would be part of the main ADSL datastep in the full code;
+
+data site_mapping;
+	merge dm_filt(in=a) pooled_sites(in=b);
+	by siteid;
+
+	if b then
+		SITEGR1='900';
+	else
+		SITEGR1=SITEID;
+run;
+
+DATA adsl;
+	merge dm sv ds;
+
+	if arm="Screen Failure" then
+		delete;
+
+	/* Most data comes from DM here. SV and DS imported to get info about discontinuation, etc */
+	by usubjid;
+
+	if SITEID ne "702";
+	keep STUDYID USUBJID SUBJID SITEID SITEGR1 ARM TRT01P TRT01PN TRT01A TRT01AN 
+		TRTSDT TRTEDT TRTDURD AVGDD CUMDOSE AGE AGEGR1 AGEGR1N AGEU RACE RACEN SEX 
+		ETHNIC SAFFL ITTFL EFFFL COMP8FL COMP16FL COMP24FL DISCONFL DSRAEFL DTHFL 
+		BMIBL BMIBLGR1 HEIGHTBL WEIGHTBL EDUCLVL DISONSDT DURDIS DURDSGR1 VISIT1DT 
+		RFSTDTC RFENDTC VISNUMEN RFENDT DCDECOD EOSSTT DCSREAS MMSETOT;
+run;
