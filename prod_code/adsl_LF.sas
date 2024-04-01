@@ -193,6 +193,13 @@ proc format;
 		3 = '>80';
 		run;
 
+proc format;
+	value $armdecode
+	'Xan_Lo' = 'Xanomeline Low Dose'
+	'Xan_Hi' = 'Xanomeline High Dose'
+	'Pbo' = 'Placebo';
+	run;
+
 **** Determine EFFL;
 
 data qs_qc;
@@ -336,6 +343,7 @@ DATA adsl_lf;
 
 	if arm="Screen Failure" then
 		delete;
+	arm = put(ARMCD,$armdecode.);
 	EDUCLVL=scstresn;
 	VISIT1DT = input(svstdtc, yymmdd10.);
 	FORMAT VISIT1DT date9.;
