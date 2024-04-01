@@ -11,3 +11,8 @@ Progress:
 - Refactored code
 - Determined which subjects completed the entire protocol and which subjects withdrew early (needed for determining TRTEDT)
 - Properly formatted TRTSDT, TRTEDT, and derived TRTDURD according to specs
+
+(Missing Logs... whoops)
+
+4/1/2024
+- Spent all day finishing the ADSL set.
